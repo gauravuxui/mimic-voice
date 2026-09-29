@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mimic Voice Admin</title>
+  <meta name="robots" content="noindex" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Lilita+One&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    html, body { overflow: auto; height: auto; min-height: 100%; }
+    body { background: radial-gradient(circle at 50% 0%, #5a2420, #1a0a0a 70%) fixed; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 32px 20px 80px; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+    .top h1 { font-size: 64px; }
+    .top a { color: var(--muted); font-weight: 600; }
+    .login { max-width: 420px; margin: 12vh auto; text-align: center; }
+    .login input, .newpack input { font: inherit; font-size: 18px; padding: 12px 14px; border-radius: 12px; border: 2px solid rgba(255,255,255,.14); background: rgba(0,0,0,.35); color: #fff; outline: none; width: 100%; }
+    .login input:focus, .newpack input:focus { border-color: var(--teal); }
+    .login p { color: var(--muted); }
+    .newpack { display: grid; grid-template-columns: 1fr 90px 70px auto auto; gap: 10px; align-items: center; margin-bottom: 24px; }
+    .pick-img { display: flex; align-items: center; gap: 6px; height: 50px; padding: 0 14px; border-radius: 12px; border: 2px dashed rgba(255,255,255,.2); color: var(--muted); font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .pick-img:hover, .pick-img.has { border-color: var(--teal); color: #fff; }
+    .newpack input[type=color] { padding: 4px; height: 50px; }
+    .pack { margin-bottom: 18px; }
+    .pack-head { display: grid; grid-template-columns: 64px 1fr 60px auto auto auto; gap: 10px; align-items: center; }
+    .pack-head .icon.pic { padding: 0; cursor: pointer; background-size: cover; background-position: center; box-shadow: 0 0 0 3px rgba(255,255,255,.2); }
+    .img-btns { display: flex; gap: 6px; }
+    .pack-head .icon { width: 64px; height: 64px; border-radius: 50%; font-size: 32px; text-align: center; border: 0; color: #fff; }
+    .pack-head input.name { font-family: 'Lilita One'; font-size: 28px; background: transparent; border: 2px solid transparent; color: #fff; border-radius: 10px; padding: 4px 8px; width: 100%; }
+    .pack-head input.name:hover, .pack-head input.name:focus { border-color: rgba(255,255,255,.15); outline: none; }
+    .pack-head input[type=color] { width: 52px; height: 44px; border: 0; background: none; padding: 0; }
+    .toggle { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; color: var(--muted); }
+    .clips { margin: 14px 0 12px; display: flex; flex-direction: column; gap: 6px; }
+    .clip { display: grid; grid-template-columns: 44px 1fr 110px 60px 44px; gap: 10px; align-items: center; background: rgba(255,255,255,.04); border-radius: 12px; padding: 6px 8px; }
+    .clip input { font: inherit; font-weight: 600; background: rgba(0,0,0,.3); border: 2px solid transparent; color: #fff; border-radius: 8px; padding: 6px 10px; }
+    .clip input:focus { border-color: var(--teal); outline: none; }
+    .clip select { font: inherit; background: rgba(0,0,0,.4); color: var(--yellow); border: 0; border-radius: 8px; padding: 6px; }
+    .clip .dur { color: var(--muted); font-size: 13px; text-align: right; }
+    .ib { border: 0; width: 40px; height: 40px; border-radius: 10px; background: rgba(255,255,255,.08); font-size: 16px; }
+    .ib.del:hover { background: #a3203c; }
+    .drop { border: 3px dashed rgba(255,255,255,.2); border-radius: 16px; padding: 18px; text-align: center; color: var(--muted); font-weight: 600; cursor: pointer; transition: .15s; }
+    .drop.over { border-color: var(--teal); color: #fff; background: rgba(63,214,217,.08); }
+    .empty { color: var(--muted); padding: 8px 4px; }
+    .status { color: var(--teal); font-weight: 600; min-height: 22px; margin-top: 6px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="app"></div>
+  <div id="toast"></div>
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# Render blueprint: one always-on Node web service (WebSockets work out of the box).
+# Free plan disks are wiped on every restart, so uploaded packs are mirrored to a private GitHub repo (store.js).
+services:
+  - type: web
+    name: mimic-voice
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # values you type in the Render dashboard when creating the Blueprint
+      - key: ADMIN_KEY          # key for /admin and /lab
+        sync: false
+      - key: GITHUB_DATA_REPO   # e.g. your-name/mimic-voice-data (private repo for uploaded packs)
+        sync: false
+      - key: GITHUB_TOKEN       # fine-grained token: Contents read/write on that repo only
+        sync: false

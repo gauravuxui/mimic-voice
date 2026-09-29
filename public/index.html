@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Mimic Voice</title>
+  <meta name="description" content="Listen to a sound, mimic it with your voice, get scored on how close you got. Online 3D party game for friends." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Lilita+One&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body class="game">
+  <canvas id="gl"></canvas>
+  <div id="dim"></div>
+
+  <div id="hud" hidden>
+    <div id="heldPower" hidden title="Your power-up"></div>
+    <div id="roundBox"><div class="rb-round">ROUND 1 / 10</div><div class="rb-phase">ANNOUNCE</div></div>
+    <div id="cards"></div>
+    <div id="hudBtns"><button id="btnSettings" title="Settings (Esc)">⚙</button><button id="btnQuit">QUIT</button></div>
+  </div>
+  <div id="bigScore" hidden></div>
+  <div id="powerBar" hidden></div>
+
+  <!-- create / edit profile -->
+  <section id="profileScreen" hidden>
+    <div class="panel prof">
+      <h1 class="title-3d">Your Player</h1>
+      <div id="profForm"></div>
+    </div>
+  </section>
+
+  <!-- home: create or join a room -->
+  <section id="homeScreen" hidden>
+    <!-- the 3D stage stays fully visible behind this screen -->
+    <div class="home-logo">MIMIC<span>VOICE</span></div>
+    <div class="home-actions">
+      <button class="btn green" id="btnCreateRoom" data-primary>CREATE ROOM</button>
+      <form class="join-row" id="joinForm">
+        <input id="joinCode" placeholder="ROOM CODE" maxlength="5" autocomplete="off" spellcheck="false" />
+        <button type="submit" class="btn">JOIN</button>
+      </form>
+    </div>
+    <aside class="panel rooms-panel" id="roomsPanel">
+      <div class="rp-head"><h3>Public rooms</h3><button class="btn small yellow" id="btnQuick" title="Jump into any open room">⚡ QUICK</button></div>
+      <div id="roomList"></div>
+    </aside>
+  </section>
+
+  <!-- friends sidebar: a slim strip of avatars that widens in place into the social panel -->
+  <aside id="friendRail" hidden>
+    <div class="rail-mini">
+      <button class="rail-me" id="railMe" title="Friends"></button>
+      <button class="rail-count" id="railCount" title="Friends">0</button>
+      <div id="railMini"></div>
+      <button class="rail-add" id="railAdd" title="Add a friend">＋</button>
+    </div>
+    <div class="fp">
+      <div class="fp-head">
+        <button class="fp-me" id="fpMe" title="Edit profile"></button>
+        <button class="fp-collapse" id="railToggle" title="Collapse"><svg viewBox="0 0 24 24"><path d="M5 6.4 10.6 12 5 17.6 6.4 19l7-7-7-7zM17 5h2v14h-2z"/></svg></button>
+      </div>
+      <div class="fp-tabs" id="fpTabs">
+        <button data-tab="list" title="Friends"><svg viewBox="0 0 24 24"><path d="M3 5h3v3H3zm5 .5h13v2H8zM3 10.5h3v3H3zm5 .5h13v2H8zM3 16h3v3H3zm5 .5h13v2H8z"/></svg></button>
+        <button data-tab="msgs" title="Messages"><svg viewBox="0 0 24 24"><path d="M9 3C5.1 3 2 5.6 2 8.8c0 1.7.9 3.2 2.3 4.3L3.6 16l3.4-1.7c.6.1 1.3.2 2 .2 3.9 0 7-2.6 7-5.8S12.9 3 9 3zm9.2 6.2c0 3.9-3.6 7-8.1 7.3 1.2 1.6 3.4 2.7 5.9 2.7.6 0 1.1-.1 1.7-.2l3.1 1.5-.6-2.6c1.3-1 2.1-2.4 2.1-3.9 0-1.9-1.6-3.6-4.1-4.8z"/></svg><i></i></button>
+        <button data-tab="add" title="Add friend"><svg viewBox="0 0 24 24"><path d="M10 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9zm0 2c-4 0-8 2-8 5v2h11.3A6 6 0 0 1 13 19c0-1.9.9-3.6 2.2-4.7-1.6-.2-3.4-.3-5.2-.3zm9 1v-3h-2v3h-3v2h3v3h2v-3h3v-2z"/></svg><i></i></button>
+      </div>
+      <div class="fp-view" data-view="list">
+        <label class="fp-field"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.8l-.3-.3A6.5 6.5 0 1 0 14 15.5l.3.3v.8l5 5 1.5-1.5-5-5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z"/></svg><input id="fpSearch" placeholder="Search" autocomplete="off" spellcheck="false" /></label>
+        <div class="fp-scroll" id="fpList"></div>
+      </div>
+      <div class="fp-view" data-view="msgs"><div class="fp-scroll" id="fpMsgs"></div></div>
+      <div class="fp-view" data-view="thread">
+        <div class="fp-thead"><button class="fp-back" id="fpBack" title="Back to messages"><svg viewBox="0 0 24 24"><path d="M15.4 5.4 14 4l-8 8 8 8 1.4-1.4L8.8 12z"/></svg></button><div class="fp-who" id="fpWho"></div></div>
+        <div class="fp-scroll fp-thread" id="fpThread"></div>
+        <form class="fp-send" id="fpSend" autocomplete="off"><label class="fp-field"><input id="fpSendInput" maxlength="200" placeholder="Message…" spellcheck="false" /></label><button title="Send"><svg viewBox="0 0 24 24"><path d="M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z"/></svg></button></form>
+      </div>
+      <div class="fp-view" data-view="add">
+        <form id="friendForm" class="fp-add" autocomplete="off">
+          <label class="fp-field"><span class="hash">#</span><input id="friendCode" placeholder="Friend code" maxlength="6" spellcheck="false" /></label>
+          <button class="fp-addbtn" id="fpAddBtn" disabled>Add Friend</button>
+        </form>
+        <button class="fp-mycode" id="fpMyCode" title="Copy your friend code"></button>
+        <div class="fp-scroll" id="fpReqs"></div>
+      </div>
+    </div>
+  </aside>
+  <div id="ctxMenu" hidden></div>
+
+  <!-- room lobby -->
+  <section id="lobby" hidden>
+    <aside class="panel packs">
+      <div class="packs-banner">
+        <div class="pb-title">Sound<br />packs</div>
+        <div class="pb-icons">🎵🎤🔊</div>
+      </div>
+      <div class="pack-count" id="packCount"></div>
+      <div class="pack-group">MIMIC PACKS</div>
+      <div id="packList"></div>
+    </aside>
+
+    <!-- the party row itself is the 3D stage; name tags and mic/speaker buttons live in #lobbySlots -->
+    <main class="lobby-main">
+      <h1 class="title-3d">Lobby</h1>
+      <div class="lobby-bottom">
+        <div class="lobby-status" id="lobbyStatus"></div>
+        <button class="btn big green" id="btnStart" data-primary>START GAME</button>
+      </div>
+    </main>
+
+    <aside class="panel settings">
+      <div class="party-code"><span>Party code</span><b id="roomCode">-----</b><button class="btn small" id="btnCopy" title="Copy invite link">🔗 COPY</button></div>
+      <div class="set-row"><span>Rounds</span><div class="seg" id="roundSeg"><button data-v="5">5</button><button data-v="7">7</button><button data-v="10">10</button></div></div>
+      <div class="set-row"><span>Room</span>
+        <div class="seg" id="visSeg"><button data-v="0">🔒 PRIVATE</button><button data-v="1">🌐 PUBLIC</button></div>
+      </div>
+      <div class="set-row col"><span>Mic check</span>
+        <div class="mic-meter"><i id="micBar"></i></div>
+        <button class="btn small ghost" id="btnMic">🎤 TEST MIC</button>
+      </div>
+      <button class="btn small ghost" id="btnLeave">⟵ LEAVE ROOM</button>
+    </aside>
+  </section>
+  <div id="lobbySlots" hidden></div>
+
+  <div id="stage"></div>
+  <section id="results" hidden></section>
+  <div id="modal" hidden></div>
+  <div id="banner"></div>
+  <div id="toast"></div>
+  <div id="glitch"></div>
+  <button id="micBtn" hidden></button>
+  <div id="chat" hidden>
+    <button id="chatHead" type="button">💬 Chat <span id="chatBadge" hidden></span><span class="chev">▾</span></button>
+    <div id="chatBody">
+      <div id="chatTabs"></div>
+      <div id="chatList"></div>
+      <form id="chatForm" autocomplete="off"><input id="chatInput" maxlength="200" placeholder="Message everyone… (@name = private)" /><button type="submit">➤</button></form>
+    </div>
+    <div id="chatPeek"></div>
+  </div>
+  <div id="netDot" title="connection"></div>
+
+  <div id="boot"><div class="boot-logo">MIMIC<span>VOICE</span></div><div class="boot-sub">loading the party…</div></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

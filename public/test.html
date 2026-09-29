@@ -1,0 +1,36 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Mimic scoring test</title></head>
+<body style="font:14px monospace;background:#111;color:#eee"><pre id="out">running…</pre>
+<script type="module">
+import { SYNTH, renderClip, applySabotage } from './js/audio.js';
+import { toAnalysisRate, features, compare } from './js/analyze.js';
+
+const clips = Object.values(SYNTH);
+const feat = async (buf) => features(await toAnalysisRate(buf));
+const bufFrom = (samples, sr) => { const oc = new OfflineAudioContext(1, samples.length, sr); const b = oc.createBuffer(1, samples.length, sr); b.getChannelData(0).set(samples); return b; };
+
+window.runTest = async () => {
+  const rows = [];
+  const refs = {};
+  for (const c of clips) refs[c.id] = await feat(await renderClip(c));
+  for (let i = 0; i < clips.length; i++) {
+    const c = clips[i];
+    const R = refs[c.id];
+    const self = compare(R, R).pct;
+    const good = compare(R, await feat(await renderClip(c, { voice: true, p: 0.7, s: 1.15 }))).pct;
+    const ok = compare(R, await feat(await renderClip(c, { voice: true, p: 0.5, s: 1.4 }))).pct;
+    const vbuf = await renderClip(c, { voice: true, p: 0.7, s: 1.15 });
+    const sab = compare(R, await feat(bufFrom(applySabotage(vbuf.getChannelData(0), vbuf.sampleRate), vbuf.sampleRate))).pct;
+    const others = [];
+    for (let k = 1; k <= 3; k++) {
+      const o = clips[(i + k * 5) % clips.length];
+      others.push(compare(R, await feat(await renderClip(o, { voice: true, p: 0.7 }))).pct);
+    }
+    const noise = new Float32Array(44100).map(() => (Math.random() * 2 - 1) * 0.3);
+    const nz = compare(R, await feat(bufFrom(noise, 44100))).pct;
+    rows.push(`${c.id.padEnd(10)} self ${String(self).padStart(3)} | good ${String(good).padStart(3)} | ok ${String(ok).padStart(3)} | sabot ${String(sab).padStart(3)} | wrong ${others.map((v) => String(v).padStart(3)).join(' ')} | noise ${nz}`);
+  }
+  document.getElementById('out').textContent = rows.join('\n');
+  return rows.join('\n');
+};
+</script></body></html>
