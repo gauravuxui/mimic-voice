@@ -367,7 +367,7 @@ export function setPlayers(list, lobby = null) {
     root.add(spk);
     root.traverse((o) => { if (o.isMesh) o.userData.charIdx = i; });
     scene.add(root);
-    chars.push({ root, ...parts, x, home: V(x, 0, -0.9), target: null, walkT: 0, label, spk, speaking: false, expr: 'neutral', singing: false, hover: false, talk: 0, mood: 'idle', moodT: 0, moodDur: 0, phase: Math.random() * TAU, glitch: false });
+    chars.push({ root, ...parts, x, home: V(x, 0, -0.9), target: null, walkT: 0, label, spk, speaking: false, expr: 'neutral', singing: false, hover: false, talk: 0, mood: 'idle', moodT: 0, moodDur: 0, phase: Math.random() * TAU });
   });
 }
 
@@ -618,7 +618,6 @@ export function setActive(i) {
 }
 export function setTalk(i, level) { if (chars[i]) chars[i].talk = level; }
 export function setMood(i, mood, dur = 2) { const c = chars[i]; if (c) { c.mood = mood; c.moodT = 0; c.moodDur = dur; } }
-export function setGlitch(i, on) { if (chars[i]) chars[i].glitch = on; }
 export function setSpeaker(level) { speakerLevel = level; }
 export const charX = (i) => (chars[i] ? chars[i].root.position.x : 0);
 export function setSpeaking(i, on) { if (chars[i]) chars[i].speaking = on; }
@@ -635,6 +634,8 @@ function charAt(ev) {
   const h = hits.find((x) => x.object.userData.charIdx !== undefined);
   return h ? h.object.userData.charIdx : -1;
 }
+// which player a screen point hits (-1 = nobody), for the right-click player menu
+export const charIndexAt = (ev) => charAt(ev);
 export function startPick(allowed, onPick) {
   pick = { allowed: new Set(allowed), onPick };
 }
@@ -810,8 +811,7 @@ function update(dt, t) {
     if (c.speaking) c.spk.scale.setScalar(0.42 + Math.sin(t * 12) * 0.03);
     const hs = c.hover ? 1.08 : 1;
     c.root.scale.setScalar(lerp(c.root.scale.x, hs, 0.25));
-    c.g.position.x = c.glitch ? (Math.random() - 0.5) * 0.1 : 0;
-    c.g.rotation.y = c.glitch ? (Math.random() - 0.5) * 0.3 : lerp(c.g.rotation.y, 0, 0.1);
+    c.g.rotation.y = lerp(c.g.rotation.y, 0, 0.1);
     // eyes follow camera a bit
     const lookX = THREE.MathUtils.clamp((camera.position.x - c.root.position.x) * 0.01, -0.03, 0.03);
     c.eyes.forEach((e, k) => { e.position.x = (k ? 0.14 : -0.14) + lookX; });

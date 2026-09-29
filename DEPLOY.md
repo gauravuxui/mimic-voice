@@ -21,7 +21,7 @@ No credit card needed. The free plan wipes its disk on every restart, so uploade
 Limits on the free plan:
 - A restart/redeploy ends running games (rooms live in memory); packs come back from the data repo.
 - Every upload/delete in `/admin` becomes a commit in the data repo (that's the backup, too).
-- Voice chat uses public STUN only; players behind strict networks may not hear each other (game still works).
+- Voice chat: without a TURN relay (`CF_TURN_*` env vars) players behind strict networks may not hear each other (the game itself still works).
 
 ## Option B – always-free VM (Oracle Cloud "Always Free")
 
@@ -61,4 +61,6 @@ Pay-As-You-Go stops that; resources inside the Always Free limits stay free.
 | `DATA_DIR` | `./data` | where uploaded packs, pack stats and reports are stored |
 | `GITHUB_DATA_REPO` | – | `owner/repo` that mirrors the data folder (optional; for hosts without a disk) |
 | `GITHUB_TOKEN` | – | fine-grained token with Contents read/write on that repo |
+| `CF_TURN_KEY_ID`, `CF_TURN_API_TOKEN` | – | Cloudflare TURN key – relays voice chat for players whose network blocks direct connections |
+| `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL` | – | any other TURN server instead of Cloudflare |
 | `MV_ROUNDS` | 10 | default rounds per game (testing) |

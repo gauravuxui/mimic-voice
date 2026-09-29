@@ -273,17 +273,29 @@ function newCode() {
   do { c = Array.from({ length: 5 }, () => A[crypto.randomInt(A.length)]).join(''); } while (rooms.has(c));
   return c;
 }
-function snapshot(room) {
+// Snapshots are made per viewer (viewer omitted = admin view with everything). Sabotage stays secret:
+// only the victim's own client learns that its take must be degraded (and never by whom), and
+// swap/sabotage power-ups are only shown to the player holding them. Bonus power-ups stay public.
+const secretPower = (pw) => pw && (pw.kind === 'swap' || pw.kind === 'sabotage');
+function snapshot(room, viewer) {
   return {
     code: room.code, hostId: room.hostId, public: !!room.public, phase: room.phase, round: room.round, rounds: room.rounds, packs: room.packs,
-    players: room.players.map((p) => ({
-      id: p.id, fid: p.fid || null, name: p.name, look: p.look, level: p.level, ready: p.ready, connected: p.connected, score: p.score,
-      pending: p.pending, active: p.active, sabBy: p.sabBy, sabTypes: p.sabTypes || [], nextSab: (p.nextSabBy || []).length > 0, held: p.usedPower || null, submitted: !!p.sub, lastPts: p.lastPts, micOn: p.micOn !== false, bot: !!p.bot,
-    })),
+    players: room.players.map((p) => {
+      const own = viewer === undefined || p.id === viewer;
+      return {
+        id: p.id, fid: p.fid || null, name: p.name, look: p.look, level: p.level, ready: p.ready, connected: p.connected, score: p.score,
+        pending: own || !secretPower(p.pending) ? p.pending : null,
+        active: own || !secretPower(p.active) ? p.active : null,
+        sabBy: own ? (viewer === undefined ? p.sabBy : (p.sabBy || []).map(() => '?')) : [],
+        sabTypes: own ? p.sabTypes || [] : [],
+        held: own ? p.usedPower || null : null,
+        submitted: !!p.sub, lastPts: p.lastPts, micOn: p.micOn !== false, bot: !!p.bot,
+      };
+    }),
   };
 }
 const emit = (room, msg) => room.players.forEach((p) => send(p.ws, msg));
-const sync = (room) => emit(room, { t: 'room', room: snapshot(room) });
+const sync = (room) => room.players.forEach((p) => send(p.ws, { t: 'room', room: snapshot(room, p.id) }));
 const live = (room) => room.players.filter((p) => p.connected);
 
 // waits end early on `cond`, when the room dies, or when the test lab sends "skip"
@@ -309,7 +321,7 @@ async function runGame(room) {
   P.forEach((p) => Object.assign(p, { score: 0, pending: null, active: null, sabBy: [], sabTypes: [], nextSabBy: [], nextSabTypes: [], usedPower: null, sub: null, history: [], lastPts: 0 }));
   room.nextSwaps = [];
   room.endNow = false;
-  room.stats = { takes: 0, sabotaged: 0, best: null, packs: new Set() };
+  room.stats = { takes: 0, best: null, packs: new Set() };
   const deal = makeDeck(room);
   for (let r = 1; r <= room.rounds && room.alive && !room.endNow; r++) {
     room.round = r;
@@ -363,12 +375,10 @@ async function runGame(room) {
       const volley = autoVolley(pts > 0 ? sub.pct : 0).map((item) => ({ item, from: others.length ? others[crypto.randomInt(others.length)].id : null }));
       const walk = 1.6, rec = Math.min(7, sub.recDur || 0);
       const owner = P.find((x) => x.id === take.recOf);
-      const sabBy = owner?.sabBy || [], sabTypes = owner?.sabTypes || [];
-      emit(room, { t: 'reveal', sabBy, sabTypes, pid: p.id, at: Date.now() + walk * 1000, clip: clip.key, sub, recOf: take.recOf, swappedWith, pts, bonus: p.active || null, volley });
+      emit(room, { t: 'reveal', pid: p.id, at: Date.now() + walk * 1000, clip: clip.key, sub, recOf: take.recOf, swappedWith, pts, bonus: p.active || null, volley });
       await nap(room, (walk + rec + 0.4) * 1000);
       p.score += pts; p.lastPts = pts;
       room.stats.takes++;
-      if (P.find((x) => x.id === take.recOf)?.sabBy?.length) room.stats.sabotaged++;
       if (!room.stats.best || pts > room.stats.best.pts) room.stats.best = { name: p.name, pts };
       p.history.push({ round: r, clip: clip.key, pct: sub.pct || 0, pts });
       sync(room);
@@ -404,7 +414,11 @@ async function runGame(room) {
       const choosers = live(room).filter((p) => p.pending && (p.pending.kind === 'swap' || p.pending.kind === 'sabotage'));
       if (choosers.length && P.length > 1) {
         room.choices = new Map();
-        emit(room, { t: 'powerups', choosers: choosers.map((c) => ({ id: c.id, kind: c.pending.kind, sab: c.pending.sab || null })), deadline: Date.now() + 12000 });
+        const deadline = Date.now() + 12000;
+        room.players.forEach((p) => {
+          const mine = choosers.find((c) => c.id === p.id);
+          send(p.ws, { t: 'powerups', choosers: mine ? [{ id: mine.id, kind: mine.pending.kind, sab: mine.pending.sab || null }] : [], waiting: choosers.length - (mine ? 1 : 0), deadline });
+        });
         await waitFor(room, () => choosers.every((c) => room.choices.has(c.id) || !c.connected), 12000);
         const results = [];
         for (const c of choosers) {
@@ -418,7 +432,10 @@ async function runGame(room) {
           c.pending = null;
         }
         room.choices = null;
-        emit(room, { t: 'powerResult', results: results.map((x) => (x.kind === 'swap' ? { from: x.from, kind: 'swap' } : x)) });
+        room.players.forEach((p) => {
+          const mine = results.filter((x) => x.kind === 'swap' || x.from === p.id).map((x) => (x.kind === 'swap' && x.from !== p.id ? { from: x.from, kind: 'swap' } : x));
+          if (mine.length) send(p.ws, { t: 'powerResult', results: mine });
+        });
         sync(room);
         await nap(room, results.length ? 2400 : 400);
       }
@@ -427,7 +444,7 @@ async function runGame(room) {
   if (!room.alive) return;
   room.phase = 'final'; sync(room);
   const st = room.stats;
-  emit(room, { t: 'final', ranking: [...P].sort((a, b) => b.score - a.score).map((p) => ({ id: p.id, score: p.score, history: p.history })), stats: { takes: st.takes, sabotaged: st.sabotaged, best: st.best, packs: [...st.packs] } });
+  emit(room, { t: 'final', ranking: [...P].sort((a, b) => b.score - a.score).map((p) => ({ id: p.id, score: p.score, history: p.history })), stats: { takes: st.takes, best: st.best, packs: [...st.packs] } });
   await sleep(1000);
   P.forEach((p) => { p.ready = p.id === room.hostId || !!p.bot; });
   room.phase = 'lobby'; room.round = 0;
@@ -464,6 +481,36 @@ function canJoin(r) {
   if (r.players.length >= MAX_PLAYERS) return 'Room is full';
   return null;
 }
+// Voice chat needs a TURN relay when players sit behind strict NATs (common on mobile/CGNAT internet).
+// Cloudflare TURN (CF_TURN_KEY_ID + CF_TURN_API_TOKEN) gets short-lived credentials; a fixed TURN
+// server works too (TURN_URLS comma-separated + TURN_USERNAME + TURN_CREDENTIAL). Without either: STUN only.
+const STUN = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+let iceCache = null; // { servers, until }
+async function iceServers() {
+  if (iceCache && Date.now() < iceCache.until) return iceCache.servers;
+  let servers = STUN, ttl = 3600e3;
+  const { CF_TURN_KEY_ID: keyId, CF_TURN_API_TOKEN: apiToken, TURN_URLS, TURN_USERNAME, TURN_CREDENTIAL } = process.env;
+  try {
+    if (keyId && apiToken) {
+      const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${keyId}/credentials/generate-ice-servers`, {
+        method: 'POST', headers: { authorization: `Bearer ${apiToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ ttl: 86400 }),
+      });
+      if (!r.ok) throw new Error(`Cloudflare TURN answered ${r.status}`);
+      const d = await r.json();
+      servers = [...STUN, ...[].concat(d.iceServers || [])];
+      ttl = 12 * 3600e3; // credentials live 24h, refresh well before
+    } else if (TURN_URLS && TURN_USERNAME && TURN_CREDENTIAL) {
+      servers = [...STUN, { urls: TURN_URLS.split(',').map((u) => u.trim()).filter(Boolean), username: TURN_USERNAME, credential: TURN_CREDENTIAL }];
+      ttl = 24 * 3600e3;
+    }
+  } catch (e) {
+    console.error(`[turn] ${e.message} – voice chat falls back to STUN only`);
+    ttl = 5 * 60e3; // try again soon
+  }
+  iceCache = { servers, until: Date.now() + ttl };
+  return servers;
+}
+
 // friend codes -> who is online right now
 const presence = new Map(); // fid -> ws
 function presenceOf(fid) {
@@ -503,6 +550,7 @@ wss.on('connection', (ws) => {
         ws.bot = !!m.bot;
         ws.profile = { name: String(m.profile?.name || 'Player').slice(0, 16), look: m.profile?.look || {}, level: Number(m.profile?.level) || 1 };
         ws.fid = /^[A-Z0-9]{6}$/.test(String(m.profile?.fid || '')) ? m.profile.fid : null;
+        if (!ws.bot) iceServers().then((servers) => send(ws, { t: 'ice', servers }));
         if (ws.fid && !ws.bot) presence.set(ws.fid, ws);
         // rejoin a running game after a reconnect
         for (const r of rooms.values()) {

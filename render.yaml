@@ -18,3 +18,8 @@ services:
         sync: false
       - key: GITHUB_TOKEN       # fine-grained token: Contents read/write on that repo only
         sync: false
+      # voice chat relay for players behind strict NATs (Cloudflare dashboard → Realtime → TURN)
+      - key: CF_TURN_KEY_ID
+        sync: false
+      - key: CF_TURN_API_TOKEN
+        sync: false

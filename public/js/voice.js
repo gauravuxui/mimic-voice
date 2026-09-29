@@ -4,7 +4,11 @@
 import * as N from './net.js';
 import { ctx } from './audio.js';
 
-const ICE = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+// STUN until the server sends its list (which adds a TURN relay when one is configured)
+let ICE = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+export function setIce(servers) { if (Array.isArray(servers) && servers.length) ICE = servers; }
+let failHook = null;
+export function onPeerFail(fn) { failHook = fn; }
 let myId = null, stream = null, track = null;
 let wantOn = localStorage.getItem('mv_chat') !== 'off';
 let locked = false;
@@ -89,7 +93,9 @@ function makePeer(id) {
     } catch {}
   };
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed' && myId < id) setTimeout(() => { if (peers.get(id)?.pc === pc) { makePeer(id); offer(id); } }, 1500);
+    if (pc.connectionState !== 'failed') return;
+    if (!p.retried && myId < id) setTimeout(() => { if (peers.get(id)?.pc === pc) { const np = makePeer(id); np.retried = true; offer(id); } }, 1500);
+    else if (failHook) failHook(id); // tried twice (or it's their turn to retry and it still failed)
   };
   peers.set(id, p);
   return p;

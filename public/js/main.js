@@ -402,8 +402,83 @@ function renderFpAdd() {
       box.append(r);
     });
   }
-  if (!incoming.length && !outgoing.length) box.append(h(`<div class="fp-empty"><small>Share your code with friends,<br>or type theirs above.</small></div>`));
+  if (blocked.length) {
+    box.append(fpGroup('Blocked', blocked.length));
+    blocked.forEach((b) => {
+      const r = h(`<div class="fp-row fp-req"><span class="fp-txt"><b>${esc(b.name)}</b><small>${b.fid ? '#' + esc(b.fid) : 'blocked'}</small></span><button class="fp-x no" title="Unblock">✕</button></div>`);
+      r.prepend(fpAvatar(null, null));
+      $('.no', r).onclick = () => setBlocked({ id: roomPlayer(b.key)?.id, fid: b.fid, name: b.name }, false);
+      box.append(r);
+    });
+  }
+  if (!incoming.length && !outgoing.length && !blocked.length) box.append(h(`<div class="fp-empty"><small>Share your code with friends,<br>or type theirs above.</small></div>`));
 }
+// ---- blocking: kept on this device, keyed by friend code (or player id for old clients)
+let blocked = (() => { try { return JSON.parse(localStorage.getItem('mv_blocked')) || []; } catch { return []; } })();
+const saveBlocked = () => localStorage.setItem('mv_blocked', JSON.stringify(blocked));
+const blockKey = (p) => p?.fid || p?.id;
+const isBlocked = (p) => !!p && blocked.some((b) => b.key === blockKey(p));
+const isBlockedFid = (fid) => !!fid && blocked.some((b) => b.key === fid);
+const roomPlayer = (id) => G.room?.players.find((p) => p.id === id);
+// blocked players are silent in voice chat
+function applyBlocks() { (G.room?.players || []).forEach((p) => { if (p.id !== pid && isBlocked(p)) V.setPeerVolume(p.id, 0); }); }
+function setBlocked(p, on) {
+  const key = blockKey(p);
+  blocked = blocked.filter((b) => b.key !== key);
+  if (on) {
+    blocked.push({ key, fid: p.fid || null, name: p.name });
+    friends = friends.filter((f) => f.fid !== p.fid); saveFriends();
+    incoming = incoming.filter((f) => f.fid !== p.fid);
+    V.setPeerVolume(p.id, 0);
+    // their earlier messages disappear too
+    for (const tab of Object.keys(CH.msgs)) CH.msgs[tab] = CH.msgs[tab].filter((m) => (m.fdm ? m.from !== p.fid : m.from !== p.id));
+    if (p.fid) { delete CH.msgs['f:' + p.fid]; CH.openF.delete('f:' + p.fid); saveDms(); }
+    renderChatTabs(); renderChatList();
+    toast(`⛔ ${p.name} blocked – you won't hear or see their messages`);
+  } else {
+    if (p.id && roomPlayer(p.id)) V.setPeerVolume(p.id, peerMuted.has(p.id) ? 0 : 1);
+    toast(`${p.name} unblocked`);
+  }
+  saveBlocked();
+  renderFriends(); renderSeats();
+}
+function reportPlayer(p) {
+  const reasons = ['Offensive voice or language', 'Spam', 'Cheating', 'Something else'];
+  const box = h(`<div class="panel mbox"><h2>🚩 Report ${esc(p.name)}</h2><p>What's wrong?</p><div class="report-reasons">${reasons.map((r) => `<button class="btn small ghost" data-r="${esc(r)}">${esc(r)}</button>`).join('')}</div><div class="actions"><button class="btn ghost" id="repNo">CANCEL</button></div></div>`);
+  box.onclick = (e) => {
+    const b = e.target.closest('[data-r]');
+    if (!b) return;
+    closeModal();
+    N.send({ t: 'report', pid: p.id, reason: b.dataset.r });
+  };
+  $('#repNo', box).onclick = closeModal;
+  openModal(box);
+}
+// right-click on a player in a party (their character, name tag or card): add friend / report / block
+function playerMenu(p, x, y) {
+  if (!p || p.id === pid || p.bot) return;
+  const isFriend = p.fid && friends.some((f) => f.fid === p.fid);
+  const menu = $('#ctxMenu');
+  menu.innerHTML = `<div class="cm-title">${esc(p.name)}</div>
+    ${isFriend ? '<button data-a="msg">💬 Send message</button>' : `<button data-a="add" ${p.fid && !isBlocked(p) ? '' : 'disabled'}>➕ Add friend</button>`}
+    <button data-a="report">🚩 Report</button>
+    ${isBlocked(p) ? '<button data-a="unblock">✅ Unblock</button>' : '<button data-a="block" class="danger">⛔ Block</button>'}`;
+  menu.hidden = false;
+  menu.style.left = `${Math.max(8, Math.min(x, innerWidth - 230))}px`;
+  menu.style.top = `${Math.max(8, Math.min(y, innerHeight - 190))}px`;
+  menu.onclick = (e) => {
+    const b = e.target.closest('button[data-a]');
+    if (!b || b.disabled) return;
+    menu.hidden = true;
+    A.sfx.click();
+    const a = b.dataset.a;
+    if (a === 'add') { N.send({ t: 'friendAdd', fid: p.fid }); toast(`Friend request sent to ${p.name}`); }
+    else if (a === 'msg') openFriendChat(p.fid);
+    else if (a === 'report') reportPlayer(p);
+    else setBlocked(p, a === 'block');
+  };
+}
+
 function acceptFriend(f) {
   incoming = incoming.filter((x) => x.fid !== f.fid);
   if (!friends.some((x) => x.fid === f.fid)) friends.push({ fid: f.fid, name: f.name, look: f.look });
@@ -533,13 +608,14 @@ function onFriendInfo(m) {
 }
 function onFriendRequest(m) {
   const f = m.from;
-  if (!f?.fid || friends.some((x) => x.fid === f.fid)) return;
+  if (!f?.fid || friends.some((x) => x.fid === f.fid) || isBlockedFid(f.fid)) return;
   if (!incoming.some((x) => x.fid === f.fid)) incoming.push(f);
   A.sfx.ding(1);
   toast(`👋 ${f.name} sent you a friend request – see Friends → Add`, 3500);
   renderFriends();
 }
 function onInvite(m) {
+  if (isBlockedFid(m.from?.fid)) return;
   if (G.screen === 'game') return toast(`📨 ${m.from?.name} invited you to room ${m.code}`, 4000);
   const box = h(`<div class="panel mbox"><h2>📨 Invite</h2><p><b>${esc(m.from?.name || 'A friend')}</b> invited you to their party (room <b>${esc(m.code)}</b>)</p><div class="actions"><button class="btn ghost" id="invNo">NO THANKS</button><button class="btn green" id="invYes" data-primary>JOIN</button></div></div>`);
   $('#invNo', box).onclick = closeModal;
@@ -550,6 +626,7 @@ function onInvite(m) {
 // a friend wants into my party
 function onJoinReq(m) {
   const f = m.from;
+  if (isBlockedFid(f?.fid)) return N.send({ t: 'joinReqAnswer', fid: f.fid, ok: false });
   const box = h(`<div class="panel mbox"><h2>🚪 ${esc(f?.name || 'A friend')}</h2><p>wants to join your party</p><div class="actions"><button class="btn ghost" id="jrNo">DECLINE</button><button class="btn green" id="jrYes" data-primary>ACCEPT</button></div></div>`);
   $('#jrNo', box).onclick = () => { closeModal(); N.send({ t: 'joinReqAnswer', fid: f.fid, ok: false }); };
   $('#jrYes', box).onclick = () => { closeModal(); N.send({ t: 'joinReqAnswer', fid: f.fid, ok: true }); };
@@ -592,6 +669,7 @@ function micIcon(p) {
     const on = V.hasMic() && V.isOn();
     return { cls: on ? 'on' : 'off', svg: on ? MIC_SVG : MIC_OFF_SVG, title: on ? 'Voice chat on – click to mute yourself' : 'Voice chat off – click to talk' };
   }
+  if (isBlocked(p)) return { cls: 'muted', svg: SPK_OFF_SVG, title: `You blocked ${p.name} – right-click them to unblock` };
   if (peerMuted.has(p.id)) return { cls: 'muted', svg: SPK_OFF_SVG, title: `You muted ${p.name} – click to hear them` };
   return { cls: p.micOn ? 'on' : 'quiet', svg: SPK_SVG, title: `Click to mute ${p.name} for you${p.micOn ? '' : ' (their mic is off)'}` };
 }
@@ -611,6 +689,7 @@ function renderSeats() {
       <div class="ls-tag"><b class="ls-name">${p.id === room.hostId ? '👑 ' : ''}${esc(p.name)}</b><span class="ls-ready">${p.ready ? '✓ READY' : 'NOT READY'}</span></div>
       <button class="ls-mic ${mic.cls}" title="${esc(mic.title)}">${mic.svg}</button>
     </div>`);
+    el.oncontextmenu = (e) => { e.preventDefault(); playerMenu(p, e.clientX, e.clientY); };
     const mb = $('.ls-mic', el);
     if (p.bot) mb.disabled = true;
     else mb.onclick = () => (p.id === pid ? toggleVoice() : togglePeerMute(p.id));
@@ -646,6 +725,8 @@ function frameLobby() {
 }
 window.addEventListener('resize', frameLobby);
 function togglePeerMute(id) {
+  const p = roomPlayer(id);
+  if (isBlocked(p)) return toast(`You blocked ${p.name} – right-click them to unblock`);
   A.sfx.click();
   if (peerMuted.has(id)) { V.setPeerVolume(id, peerMuted.get(id) || 1); peerMuted.delete(id); }
   else { peerMuted.set(id, V.getPeerVolume(id)); V.setPeerVolume(id, 0); }
@@ -732,17 +813,17 @@ function renderCards(activeId = null) {
     if (p.score > before) { card.classList.add('bump'); card.append(h(`<div class="gain">+${p.score - before}</div>`)); A.sfx.ding(1); }
     G.shownScores[p.id] = p.score;
     let fx = null;
-    if (p.sabBy?.length) fx = h(`<div class="fx bad">${sabInfo(p.sabTypes?.[0]).icon} HIT</div>`);
-    else if (p.active && (p.active.kind === 'add' || p.active.kind === 'mult')) fx = h(`<div class="fx" style="background:${KIND_COLOR[p.active.kind]}">${esc(p.active.label)}</div>`);
+    if (p.active && (p.active.kind === 'add' || p.active.kind === 'mult')) fx = h(`<div class="fx" style="background:${KIND_COLOR[p.active.kind]}">${esc(p.active.label)}</div>`);
     else if (p.pending) fx = h(`<div class="fx" style="background:${KIND_COLOR[p.pending.kind] || '#e0287a'}">🎁 ${esc(p.pending.label)}</div>`);
     if (fx) card.append(fx);
+    card.oncontextmenu = (e) => { e.preventDefault(); playerMenu(p, e.clientX, e.clientY); };
     if (G.room.phase === 'listen' && p.submitted) card.append(h(`<div class="done">✔</div>`));
     wrap.append(card);
   });
 }
 const SAB_INFO = {
-  disturb: { icon: '⚡', name: 'MIC DISTURB', tag: 'MIC DISTURBED BY', stamp: '⚡ MIC DISTURBED', pick: 'Pick someone to sabotage! Their mic gets static + cut-outs.' },
-  crap: { icon: '💩', name: 'CRAP MIC', tag: 'CRAP MIC FROM', stamp: '💩 CRAP MIC', pick: 'Pick someone to sabotage! They record through a cheap, broken mic.' },
+  disturb: { icon: '⚡', name: 'MIC DISTURB', pick: 'Pick someone to sabotage! Their mic gets static + cut-outs.' },
+  crap: { icon: '💩', name: 'CRAP MIC', pick: 'Pick someone to sabotage! They record through a cheap, broken mic.' },
 };
 const sabInfo = (t) => SAB_INFO[t] || SAB_INFO.disturb;
 function cardsVisible(on) { $('#cards').classList.toggle('hide', !on); }
@@ -934,6 +1015,7 @@ function pushChat(tab, m) {
 }
 function chatLine(html) { pushChat('all', { sys: true, html }); }
 function addChat(m, quiet = false) {
+  if (m.fdm ? isBlockedFid(m.from) : isBlocked(roomPlayer(m.from))) return; // blocked: their messages never show
   const tab = tabOf(m);
   pushChat(tab, m);
   const mine = m.fdm ? m.from === profile?.fid : m.from === pid;
@@ -1015,6 +1097,12 @@ async function toggleVoice() {
 }
 function setupMicBtn() {
   $('#micBtn').onclick = toggleVoice;
+  const told = new Set();
+  V.onPeerFail((id) => {
+    if (told.has(id)) return;
+    told.add(id);
+    toast(`🔇 Voice chat couldn't connect to ${nameOf(id)} – their network blocks it`, 4000);
+  });
   V.onChange(() => { renderMicBtn(); renderSeats(); });
 }
 
@@ -1111,10 +1199,9 @@ function onPowerups(m) {
   S.showWheel(false);
   hideScore();
   const mine = m.choosers.find((c) => c.id === pid);
-  const others = m.choosers.filter((c) => c.id !== pid);
   S.setView('overview');
   if (!mine) {
-    caption(`⏳ ${others.map((c) => `${esc(nameOf(c.id))} is using ${c.kind === 'swap' ? '🔄 SWAP' : `${sabInfo(c.sab).icon} ${sabInfo(c.sab).name}`}`).join(' · ')}`);
+    caption('⏳ Power-ups are being used…');
     return;
   }
   const isSwap = mine.kind === 'swap';
@@ -1147,10 +1234,6 @@ function onPowerResult(m) {
   S.stopPick();
   m.results.forEach((r, k) => setTimeout(() => {
     if (r.kind === 'swap') { A.sfx.whoosh(); if (r.from !== pid) toast(`🔄 ${nameOf(r.from)} used SWAP on someone… 👀`); }
-    else {
-      A.sfx.glitch(); toast(`${sabInfo(r.sab).icon} ${nameOf(r.from)} hit ${nameOf(r.to)} with ${sabInfo(r.sab).name}!`);
-      const i = idxOf(r.to); S.setGlitch(i, true); setTimeout(() => S.setGlitch(i, false), 900);
-    }
   }, k * 900));
 }
 
@@ -1192,10 +1275,9 @@ async function onListen(m) {
   W.wrap.append(count);
   const art = h(packArt(pack, 'reveal-art', true));
   const title = h(`<div class="reveal-block">${art.outerHTML}<div class="clip-title">${esc(meta?.name || 'mystery')}</div><div class="clip-pack">${esc(pack?.name || '')}</div></div>`);
-  const sabTag = sab ? h(`<div class="sab-tag">${sabInfo(sabTypes[0]).icon} ${sabInfo(sabTypes[0]).tag} ${esc(me().sabBy.join(' + ').toUpperCase())}</div>`) : null;
   const cap = h(`<div class="caption">Listen carefully to the demo</div>`);
   const acts = h(`<div class="actions"></div>`);
-  setStage(title, sabTag, W.wrap, cap, acts);
+  setStage(title, W.wrap, cap, acts);
   A.playAt(buf, t0);
   let stage = 'wait', lastCount = 0;
   // stage changes run on a timer (not only in rAF) so they also happen in a background tab
@@ -1216,7 +1298,6 @@ async function onListen(m) {
         S.setView('self', myIdx);
         S.setActive(myIdx);
         cap.textContent = 'Everyone at once – one shot only!';
-        if (sab) { document.body.classList.add('glitching'); S.setGlitch(myIdx, true); }
       }
       const n = Math.max(1, Math.ceil(recStart - now));
       if (n !== lastCount) { lastCount = n; count.textContent = n; count.classList.remove('pop'); void count.offsetWidth; count.classList.add('pop'); A.sfx.beep(); }
@@ -1246,8 +1327,6 @@ async function onListen(m) {
   const raw = A.captured(recStart - 0.1, recEnd + 0.2);
   const noise = A.captured(demoEnd + 0.25, recStart - 0.1);
   V.setLocked(false);
-  document.body.classList.remove('glitching');
-  S.setGlitch(myIdx, false);
   S.setExpr(myIdx, 'neutral');
   ui.talkIdx = -1; S.setTalk(myIdx, 0);
   const sr = A.ctx.sampleRate;
@@ -1309,18 +1388,14 @@ async function onReveal(m) {
   const tRec = ctxTimeFor(m.at);
   await waitUntil(tRec - 0.05);
   if (token !== revealToken) return;
-  const sabbed = (m.sabBy || []).length > 0;
   if (rec) {
     if (m.swappedWith) A.sfx.whoosh();
-    if (sabbed) { A.sfx.glitch(); S.setGlitch(i, true); caption(`${sabInfo(m.sabTypes?.[0]).icon} ${esc(p.name)}'s take got ${sabInfo(m.sabTypes?.[0]).name} from ${esc(m.sabBy.join(' + '))}!`, 'sab-cap'); }
     ui.talkIdx = i; ui.talkSrc = 'out';
     S.setSinging(i, true);
     A.playAt(rec, tRec);
     await waitUntil(tRec + rec.duration + 0.35);
   } else await sleep(700);
   if (token !== revealToken) return;
-  S.setGlitch(i, false);
-  if (sabbed) setStage(throwBar);
   ui.talkIdx = -1; S.setTalk(i, 0); S.setSinging(i, false);
 
   // the big "NN / 100" under the mic, coloured by score, bonus line under it
@@ -1331,7 +1406,7 @@ async function onReveal(m) {
   const silent = sub.note === 'silent' || sub.note === 'missing';
   const box = $('#bigScore');
   box.className = color;
-  box.innerHTML = `<div class="bs-num"><span>0</span> / 100</div>${bonus ? `<div class="bs-sub">${bonus}</div>` : ''}${silent ? '<div class="bs-sub">no voice heard 🤐</div>' : ''}${sabbed ? `<div class="sab-stamp">${[...new Set(m.sabTypes || ['disturb'])].map((t) => sabInfo(t).stamp).join(' + ')}</div>` : ''}`;
+  box.innerHTML = `<div class="bs-num"><span>0</span> / 100</div>${bonus ? `<div class="bs-sub">${bonus}</div>` : ''}${silent ? '<div class="bs-sub">no voice heard 🤐</div>' : ''}`;
   box.hidden = false;
   const num = $('.bs-num span', box);
   for (let k = 0; k <= pct; k += Math.max(1, Math.round(pct / 25))) { if (token !== revealToken) return; num.textContent = k; A.sfx.count(); await sleep(28); }
@@ -1430,7 +1505,6 @@ async function onFinal(m) {
       <h1 class="res-title">RESULTS</h1>
       <div class="podium"></div>
       <div class="res-stats">
-        ${stats.takes ? `<div>Sabotaged takes: ${stats.sabotaged}/${stats.takes}</div>` : ''}
         ${stats.best ? `<div>Best imitation: ${esc(stats.best.name)} (${stats.best.pts})</div>` : ''}
         <div>Click PLAY AGAIN to keep going with this table. No answer sends you to the menu.</div>
       </div>
@@ -1511,11 +1585,10 @@ function openSettings(tab = 'options') {
       const others = G.room.players.filter((p) => p.id !== pid);
       if (!others.length) body.append(h(`<p>No one else here yet.</p>`));
       others.forEach((p) => {
-        const row = h(`<div class="srow"><span>${esc(p.name)}</span><input type="range" min="0" max="100" value="${Math.round(V.getPeerVolume(p.id) * 100)}" /><b></b><button class="btn small ghost">REPORT</button></div>`);
+        const row = h(`<div class="srow"><span>${esc(p.name)}</span><input type="range" min="0" max="100" value="${Math.round(V.getPeerVolume(p.id) * 100)}" /><b></b></div>`);
         const r = $('input', row), b = $('b', row);
         const u = () => { b.textContent = `${r.value}%`; V.setPeerVolume(p.id, r.value / 100); };
         r.oninput = u; u();
-        $('.btn', row).onclick = (e) => { e.currentTarget.disabled = true; N.send({ t: 'report', pid: p.id }); };
         body.append(row);
       });
     }
@@ -1526,6 +1599,13 @@ function openSettings(tab = 'options') {
   openModal(box);
 }
 function setupHudButtons() {
+  // in a match: right-click a character for add friend / report / block
+  $('#gl').addEventListener('contextmenu', (e) => {
+    if (G.screen !== 'game' || !G.room) return;
+    e.preventDefault();
+    const i = S.charIndexAt(e);
+    if (i >= 0) playerMenu(G.room.players[i], e.clientX, e.clientY);
+  });
   $('#btnSettings').onclick = () => openSettings();
   $('#btnQuit').onclick = () => {
     const box = h(`<div class="panel mbox"><h2>Leave the game?</h2><p>Your score stays with the others, you go back to the menu.</p><div class="actions"><button class="btn ghost" id="qNo" data-primary>STAY</button><button class="btn pink" id="qYes">QUIT</button></div></div>`);
@@ -1561,7 +1641,7 @@ function onMessage(m) {
       if (pendingInvite) { N.send({ t: 'invite', fid: pendingInvite }); pendingInvite = null; }
       break;
     case 'error': toast(m.msg, 3200); break;
-    case 'room': onRoom(m.room); V.syncPeers(m.room.players); renderMicBtn(); renderChatTabs(); break;
+    case 'room': onRoom(m.room); V.syncPeers(m.room.players); applyBlocks(); renderMicBtn(); renderChatTabs(); break;
     case 'chat': addChat(m); break;
     case 'rooms': renderRoomList(m.list); break;
     case 'friendsStatus':
@@ -1578,6 +1658,7 @@ function onMessage(m) {
     case 'fdm': addChat({ ...m, fdm: true, name: m.from === profile?.fid ? profile.name : m.fromName }); renderFriends(); break;
     case 'chatHistory': resetChat(m.list); break;
     case 'rtc': V.onSignal(m.from, m.data).catch((e) => console.warn('rtc', e)); break;
+    case 'ice': V.setIce(m.servers); break;
     case 'left': G.code = null; V.leaveAll(); history.replaceState(null, '', location.pathname); $('#joinCode').value = ''; renderMicBtn(); showHome(); break;
     case 'powerups': onPowerups(m); break;
     case 'powerResult': onPowerResult(m); break;
