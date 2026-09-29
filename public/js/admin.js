@@ -18,7 +18,7 @@ function toast(msg, ms = 2400) {
 async function api(path, opts = {}) {
   const r = await fetch(`/api/admin/${path}`, { ...opts, headers: { 'x-admin-key': key, ...(opts.json ? { 'content-type': 'application/json' } : {}), ...(opts.headers || {}) }, body: opts.json ? JSON.stringify(opts.json) : opts.body });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || r.statusText);
+  if (!r.ok) { const err = new Error(data.error || r.statusText); err.status = r.status; throw err; }
   return data;
 }
 
@@ -49,14 +49,20 @@ function renderLogin(msg = '') {
     e.preventDefault();
     key = $('#key').value.trim();
     try { await api('check'); localStorage.setItem('mv_admin', key); load(); }
-    catch { renderLogin('Wrong key'); }
+    catch (err) { renderLogin(err.status === 401 ? 'Wrong key' : 'The server is waking up – try again in a few seconds'); }
   };
   $('#key').focus();
 }
 
-async function load() {
+// the saved key is only dropped when the server says it's wrong – a sleeping or
+// redeploying server (free hosting) just means "wait and try again"
+async function load(tries = 0) {
   try { packs = await api('packs'); stats = await api('pack-stats').catch(() => ({})); }
-  catch { localStorage.removeItem('mv_admin'); return renderLogin(); }
+  catch (err) {
+    if (err.status === 401) { localStorage.removeItem('mv_admin'); return renderLogin('That key no longer works – enter the current one'); }
+    $('#app').replaceChildren(h(`<div class="panel login"><h1 class="title-3d" style="font-size:44px">Admin</h1><p>Server is waking up… (${tries + 1})</p></div>`));
+    return setTimeout(() => load(tries + 1), Math.min(10000, 2000 + tries * 1000));
+  }
   render();
 }
 
