@@ -638,3 +638,7 @@ body.game img, body.game canvas { -webkit-user-drag: none; }
 /* report dialog */
 .report-reasons { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 4px; }
 .lslot { pointer-events: auto; }
+
+/* friends panel: explicit edit button next to your name */
+.fp-me .fp-edit { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; font-size: 14px; cursor: pointer; opacity: 0.75; }
+.fp-me .fp-edit:hover { opacity: 1; background: var(--fp-card); }

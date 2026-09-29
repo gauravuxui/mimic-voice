@@ -14,9 +14,23 @@ const stars = (n) => '★'.repeat(n || 2) + '☆'.repeat(3 - (n || 2));
 
 // ---------- identity ----------
 const pid = sessionStorage.getItem('mv_pid') || (() => { const id = crypto.randomUUID(); sessionStorage.setItem('mv_pid', id); return id; })();
-let profile = (() => { try { return JSON.parse(localStorage.getItem('mv_profile')); } catch { return null; } })();
+// The profile lives in localStorage and, as a backup, a year-long cookie: some browsers wipe one of them
+// (storage pressure, privacy cleaners), and losing it means making your player again.
+const PROFILE_COOKIE = 'mv_profile';
+function readProfile() {
+  let raw = null;
+  try { raw = localStorage.getItem('mv_profile'); } catch {}
+  if (!raw) raw = decodeURIComponent(document.cookie.split('; ').find((c) => c.startsWith(PROFILE_COOKIE + '='))?.slice(PROFILE_COOKIE.length + 1) || '');
+  try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+let profile = readProfile();
+navigator.storage?.persist?.().catch(() => {}); // ask the browser not to evict our data
 const level = () => 1 + Math.floor((profile?.xp || 0) / 400);
-const saveProfile = () => localStorage.setItem('mv_profile', JSON.stringify(profile));
+function saveProfile() {
+  const raw = JSON.stringify(profile);
+  try { localStorage.setItem('mv_profile', raw); } catch {}
+  document.cookie = `${PROFILE_COOKIE}=${encodeURIComponent(raw)}; max-age=${400 * 86400}; path=/; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+}
 const helloMsg = () => ({ t: 'hello', pid, profile: { name: profile?.name || 'Player', look: profile?.look, level: level(), fid: profile?.fid } });
 
 // ---------- state ----------
@@ -145,8 +159,10 @@ function renderProfile(draft = profile ? structuredClone(profile) : { name: '', 
     $('.swatches', st).append(b);
   });
   box.append(st);
-  const acts = h(`<div class="actions"><button class="btn ghost small" id="btnRandom">🎲 RANDOM</button><button class="btn green big" id="btnSaveProfile" data-primary>SAVE</button></div>`);
+  const acts = h(`<div class="actions">${profile ? '<button class="btn ghost small" id="btnBackProfile">← BACK</button>' : ''}<button class="btn ghost small" id="btnRandom">🎲 RANDOM</button><button class="btn green big" id="btnSaveProfile" data-primary>SAVE</button></div>`);
   box.append(acts);
+  $('#profileScreen .title-3d').textContent = profile ? 'Edit Player' : 'Your Player';
+  if (profile) $('#btnBackProfile', box).onclick = () => { A.sfx.click(); if (G.code) showRoomLobby(); else showHome(); };
   $('#profName', box).oninput = (e) => { draft.name = e.target.value; preview(); };
   $('#btnRandom', box).onclick = () => { A.sfx.pop(); renderProfile({ ...draft, look: randomLook() }); };
   $('#btnSaveProfile', box).onclick = () => {
@@ -290,7 +306,7 @@ function renderFriends() {
   if (!railIsOpen()) return;
   // panel
   const me = $('#fpMe');
-  me.replaceChildren(h(`<span class="fp-txt"><b>${esc(profile?.name || '')}</b><small>Online</small></span>`));
+  me.replaceChildren(h(`<span class="fp-txt"><b>${esc(profile?.name || '')}</b><small>Online</small></span>`), h(`<span class="fp-edit" title="Edit your player">✏️</span>`));
   me.prepend(fpAvatar(profile?.look, { online: true }, 44));
   $$('#fpTabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === FP.tab));
   if (FP.thread === 'all' && !G.code) FP.thread = null; // left the party
@@ -581,7 +597,7 @@ function setupSocial() {
   $('#fpSendInput').addEventListener('keydown', (e) => { if (e.key === 'Escape') e.target.blur(); });
   $('#fpTabs').onclick = (e) => { const b = e.target.closest('button[data-tab]'); if (b) fpTab(b.dataset.tab); };
   $('#fpSearch').oninput = (e) => { FP.q = e.target.value; renderFriends(); };
-  $('#fpMe').onclick = () => { setRailOpen(false); showProfile(); };
+  $('#fpMe').onclick = (e) => { if (e.target.closest('.fp-edit')) { setRailOpen(false); showProfile(); } };
   $('#fpMyCode').onclick = async () => { try { await navigator.clipboard.writeText(profile.fid); toast('Friend code copied'); } catch { toast(profile.fid); } };
   $('#railMe').onclick = () => setRailOpen(!railIsOpen());
   $('#railCount').onclick = () => setRailOpen(true);
