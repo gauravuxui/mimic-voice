@@ -802,7 +802,7 @@ function setupLobby() {
     if (isHost()) N.send({ t: 'start' });
     else N.send({ t: 'ready', v: !me()?.ready });
   };
-  $('#btnLeave').onclick = () => { N.send({ t: 'leave' }); V.leaveAll(); G.code = null; history.replaceState(null, '', location.pathname); showHome(); };
+  $('#btnLeave').onclick = () => { stopMatch(); N.send({ t: 'leave' }); V.leaveAll(); G.code = null; history.replaceState(null, '', location.pathname); showHome(); };
   $('#btnCopy').onclick = async () => {
     const link = `${location.origin}${location.pathname}?room=${G.room.code}`;
     try { await navigator.clipboard.writeText(link); toast('Invite link copied!'); } catch { toast(link, 5000); }
@@ -1298,7 +1298,7 @@ async function onListen(m) {
   let stage = 'wait', lastCount = 0;
   // stage changes run on a timer (not only in rAF) so they also happen in a background tab
   const step = () => {
-    if (seq !== phaseSeq && G.room.phase !== 'listen') return;
+    if (!G.code || (seq !== phaseSeq && G.room?.phase !== 'listen')) return;
     const now = A.ctx.currentTime;
     if (now < demoEnd) {
       if (now >= t0 && stage !== 'demo') { stage = 'demo'; cap.textContent = 'Listen carefully to the demo'; }
@@ -1338,8 +1338,9 @@ async function onListen(m) {
   const iv = setInterval(step, 30);
   ui.draw = () => { step(); drawWave(W); };
   // wait for the recording window to close (+ a little for mic latency)
-  while (A.ctx.currentTime < recEnd + 0.3) await sleep(40);
+  while (A.ctx.currentTime < recEnd + 0.3 && G.code) await sleep(40);
   clearInterval(iv);
+  if (!G.code) return; // left mid-round: nothing to score or upload
   const raw = A.captured(recStart - 0.1, recEnd + 0.2);
   const noise = A.captured(demoEnd + 0.25, recStart - 0.1);
   V.setLocked(false);
@@ -1483,7 +1484,19 @@ async function onSpin(m) {
 }
 
 // ---------- RESULTS ----------
+// Leaving mid-match: silence whatever the round was playing and cancel its pending steps, so no demo,
+// take or talking mouth follows you into the lobby, the home screen or the player editor.
+function stopMatch() {
+  phaseSeq++; revealToken++;
+  A.stopPlayback();
+  ui.talkIdx = -1; ui.draw = null;
+  V.setLocked(false);
+  S.stopPick(); S.showWheel(false); S.setActive(-1);
+  setStage(); setSide(false); setCenter(false); hideScore(); dim(false);
+  G.room = null; G.clip = null; G.recs = {};
+}
 function leaveToMenu() {
+  stopMatch();
   N.send({ t: 'leave' }); V.leaveAll();
   G.code = null; G.resultsOpen = false;
   history.replaceState(null, '', location.pathname);
@@ -1639,7 +1652,10 @@ function setupHudButtons() {
 }
 
 // ---------- network ----------
+// match messages that were already on their way when you left the room are dropped
+const MATCH_MSGS = new Set(['prepare', 'listen', 'revealStart', 'reveal', 'throw', 'wheel', 'spin', 'powerups', 'powerResult', 'final']);
 function onMessage(m) {
+  if (!G.code && MATCH_MSGS.has(m.t)) return;
   switch (m.t) {
     case 'net':
       $('#netDot').classList.toggle('down', !m.up);
@@ -1675,7 +1691,7 @@ function onMessage(m) {
     case 'chatHistory': resetChat(m.list); break;
     case 'rtc': V.onSignal(m.from, m.data).catch((e) => console.warn('rtc', e)); break;
     case 'ice': V.setIce(m.servers); break;
-    case 'left': G.code = null; V.leaveAll(); history.replaceState(null, '', location.pathname); $('#joinCode').value = ''; renderMicBtn(); showHome(); break;
+    case 'left': stopMatch(); G.code = null; V.leaveAll(); history.replaceState(null, '', location.pathname); $('#joinCode').value = ''; renderMicBtn(); showHome(); break;
     case 'powerups': onPowerups(m); break;
     case 'powerResult': onPowerResult(m); break;
     case 'prepare': onPrepare(m); break;
