@@ -36,7 +36,7 @@ export async function start(id) {
   myId = id;
   if (stream) return true;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, voiceIsolation: true } });
     // own clone, so muting chat can never silence the game recorder
     track = stream.getAudioTracks()[0].clone();
     stream = new MediaStream([track]);

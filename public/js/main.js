@@ -1,5 +1,6 @@
 import * as A from './audio.js';
 import { scoreMimic, voiceActivity } from './analyze.js';
+import { cleanVoice } from './clean.js';
 import * as V from './voice.js';
 import * as S from './scene.js';
 import * as N from './net.js';
@@ -1347,14 +1348,17 @@ async function onListen(m) {
   S.setExpr(myIdx, 'neutral');
   ui.talkIdx = -1; S.setTalk(myIdx, 0);
   const sr = A.ctx.sampleRate;
-  const samples = sab ? A.applySabotages(raw, sr, sabTypes) : raw;
+  // nothing said = 0, no matter what the room noise looks like
+  const va = voiceActivity(raw, sr, noise);
+  // what the room hears: background noise taken out and the voice cleaned up (scoring still uses the raw take)
+  const voice = va.speech ? await cleanVoice(raw, sr, noise).catch(() => raw) : raw;
+  if (!G.code) return;
+  const samples = sab ? A.applySabotages(voice, sr, sabTypes) : voice;
   W.live = null; W.head = -1;
   W.rec = samples.subarray(Math.round(0.1 * sr)); W.recDur = W.rec.length / sr; W.cache.clear(); // skip the 0.1 s pre-roll
   acts.replaceChildren();
   cap.className = 'caption'; cap.textContent = 'Nice! Waiting for everyone…';
 
-  // nothing said = 0, no matter what the room noise looks like
-  const va = voiceActivity(raw, sr, noise);
   let res;
   if (!A.micReady() || !va.speech) res = { pct: 0, pitch: 0, rhythm: 0, tone: 0, note: 'silent' };
   else res = await scoreMimic(buf, A.toBuffer(sab ? A.applySabotages(va.trimmed, sr, sabTypes) : va.trimmed, sr));

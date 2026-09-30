@@ -23,7 +23,7 @@ const filters = (() => {
 })();
 const dctM = Array.from({ length: NC }, (_, k) => Float32Array.from({ length: NB }, (_, b) => Math.cos((Math.PI * (k + 1) * (b + 0.5)) / NB)));
 
-function fft(re, im) {
+export function fft(re, im) {
   const n = re.length;
   for (let i = 1, j = 0; i < n; i++) {
     let bit = n >> 1;
