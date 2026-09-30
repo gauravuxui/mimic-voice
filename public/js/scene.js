@@ -321,7 +321,8 @@ function buildChar(lk) {
     brows.push(b);
   });
   add(head, new THREE.SphereGeometry(0.06, 12, 10), skin, [0, -0.03, 0.42]);
-  const smile = add(head, new THREE.TorusGeometry(0.1, 0.022, 8, 20, Math.PI), dark, [0, -0.13, 0.39], { rot: [0, 0, Math.PI] });
+  // a thin, gentle smile (126° of arc, centred at the bottom) tilted to follow the curve of the face
+  const smile = add(head, new THREE.TorusGeometry(0.11, 0.012, 8, 24, Math.PI * 0.7), mat('#4a1d16', { roughness: 0.6 }), [0, -0.09, 0.39], { rot: [0.3, 0, Math.PI * 1.15] });
   const mouth = add(head, new THREE.SphereGeometry(0.1, 16, 12), mat('#5a0f14'), [0, -0.17, 0.37], { scale: [1.1, 0.1, 0.45] });
   if (look.hair) {
     const hair = mat(look.hair);
@@ -770,6 +771,7 @@ function update(dt, t) {
     const talk = c.talk;
     c.mouth.scale.y = lerp(c.mouth.scale.y, 0.1 + Math.min(1, talk * 1.2), 0.5);
     c.smile.visible = talk < 0.12;
+    c.mouth.visible = !c.smile.visible; // the open mouth only shows while talking
     headX -= talk * 0.18;
     if (talk > 0.05) { y += Math.abs(Math.sin(t * 14)) * talk * 0.06; armX -= talk * 0.5; }
     if (c.mood === 'happy' || c.mood === 'win') {
