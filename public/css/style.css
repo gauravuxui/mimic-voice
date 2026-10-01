@@ -642,3 +642,8 @@ body.game img, body.game canvas { -webkit-user-drag: none; }
 /* friends panel: explicit edit button next to your name */
 .fp-me .fp-edit { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; font-size: 14px; cursor: pointer; opacity: 0.75; }
 .fp-me .fp-edit:hover { opacity: 1; background: var(--fp-card); }
+
+/* credit to the game this one is a tribute to */
+.credit { position: absolute; left: 20px; bottom: 18px; max-width: 300px; font-size: 12.5px; line-height: 1.4; color: rgba(255, 235, 225, 0.7); text-decoration: none; background: rgba(20, 8, 12, 0.55); padding: 7px 11px; border-radius: 10px; }
+.credit b { color: #fff; }
+.credit:hover { color: #fff; background: rgba(20, 8, 12, 0.8); }
